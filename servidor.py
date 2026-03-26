@@ -30,17 +30,20 @@ class server():
         self.selector.register(self.server_socket, selectors.EVENT_READ)
 
     def aceptar_conexion(self):
-        # aceptamos la conexión
-        cliente_socket, direccion = self.server_socket.accept()
-        
-        # la hacemos no bloqueante y la registramos en el selector
-        cliente_socket.setblocking(False)
-        self.selector.register(cliente_socket, selectors.EVENT_READ)
+        # aceptamos la conexión, recibimos la direccion pero no la usamos
+        cliente_socket, _ = self.server_socket.accept()
+
+        # forzamos bloqueante para recibir el nombre sin problemas
+        cliente_socket.setblocking(True)
         
         # pedimos el nombre y lo guardamos, convertimos texto a bytes y viceversa
         cliente_socket.send("Ingresa tu nombre: ".encode())
         nombre = cliente_socket.recv(1024).decode()
         self.clientes[cliente_socket] = nombre
+
+        # la hacemos no bloqueante y la registramos en el selector
+        cliente_socket.setblocking(False)
+        self.selector.register(cliente_socket, selectors.EVENT_READ)
         
         # notificamos a todos que llegó alguien
         self.broadcast(f"{nombre} se unió al chat!", None)
@@ -52,15 +55,19 @@ class server():
             if cliente_socket != socket_emisor:
                 try:
                     cliente_socket.send(mensaje.encode())
-                except:
-                    self.desconectar_cliente(cliente_socket)
+                except Exception:
+                    # limpiamos directamente sin llamar a desconectar_cliente
+                    self.selector.unregister(cliente_socket)
+                    del self.clientes[cliente_socket]
+                    cliente_socket.close()
 
     def revisar_selectores(self):
         while True:
             # Lista de selectores que tuvieron actividad
-            eventos = self.selector.select()
+            eventos = self.selector.select(timeout=1)
             for evento in eventos:
                 # evento[0].fileobj nos da el socket que tuvo actividad
+                # [0] obtenemos el socket, [1] tipo de evento R/W
                 socket_evento = evento[0].fileobj
                 if socket_evento == self.server_socket:
                     # es una conexión nueva
@@ -85,16 +92,27 @@ class server():
             self.desconectar_cliente(cliente_socket)
 
     def desconectar_cliente(self, cliente_socket):
-        nombre = self.clientes[cliente_socket]
+        # si el cliente ya no está en el diccionario
+        if cliente_socket not in self.clientes:
+            return
         
+        # obtenemos el nombre de forma segura
+        nombre = self.clientes.get(cliente_socket, "Un cliente")
+
         # notificamos a todos que se fue
         self.broadcast(f"{nombre} abandonó el chat.", None)
         self.guardar_log(f"{nombre} abandonó el chat.")
         
         # le decimos al selector que deje de monitorear ese socket
-        self.selector.unregister(cliente_socket)
-        # lo borramos del diccionario y cerramos el socket
-        del self.clientes[cliente_socket]
+        try:
+            self.selector.unregister(cliente_socket)
+        except Exception:
+            # si falla el unregister, no importa, seguimos limpiando igual
+            pass
+
+        # borramos del diccionario y cerramos el socket
+        if cliente_socket in self.clientes:
+            del self.clientes[cliente_socket]
         cliente_socket.close()
 
     def guardar_log(self, mensaje):
