@@ -13,6 +13,8 @@ class server():
     
     def establecer_conexion(self):
         # si el servidor se cayó y el puerto quedó en un estado intermedio.
+        # setsockopt opciones del socket/ sol_socket indica la configuracion
+        # reuseador permite reutilizar
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
         # configuramos el socket para que controle si el programa ya se esta ejecutando o si otro server usa el puerto.
@@ -111,8 +113,7 @@ class server():
             pass
 
         # borramos del diccionario y cerramos el socket
-        if cliente_socket in self.clientes:
-            del self.clientes[cliente_socket]
+        del self.clientes[cliente_socket]
         cliente_socket.close()
 
     def guardar_log(self, mensaje):

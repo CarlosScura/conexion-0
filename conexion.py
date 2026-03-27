@@ -1,4 +1,4 @@
 
 # constantes del entorno
 HOST = 'localhost'
-PORT = 5555
+PORT = 6039
