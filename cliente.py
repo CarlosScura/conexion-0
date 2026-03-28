@@ -53,8 +53,10 @@ class client():
                     self.conectado = False
                     self.reconectar()
             except:
-                self.conectado = False
-                self.reconectar()
+                # Si el cliente pidio su desconexión entonces no intenta reconectarse
+                if self.conectado:
+                    self.conectado = False
+                    self.reconectar()
     
     # thread 2
     def enviar(self):
