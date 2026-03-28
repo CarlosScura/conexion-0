@@ -50,18 +50,44 @@ class server():
         # notificamos a todos que llegó alguien
         self.broadcast(f"{nombre} se unió al chat!", None)
 
-    def broadcast(self, mensaje, socket_emisor):
+    def broadcast(self, mensaje: str, socket_emisor):
         # si modificamos el diccionario va a causar error 
         # asi que creamos una lista solo de los sockets
+        fallados = []
         for cliente_socket in list(self.clientes):
             if cliente_socket != socket_emisor:
+                cliente_socket: socket.socket
                 try:
                     cliente_socket.send(mensaje.encode())
                 except Exception:
-                    # limpiamos directamente sin llamar a desconectar_cliente
-                    self.selector.unregister(cliente_socket)
-                    del self.clientes[cliente_socket]
-                    cliente_socket.close()
+                    fallados.append(cliente_socket)
+    
+        # desconectamos los que fallaron
+        for fallado in fallados:
+            self.desconectar_cliente(fallado)
+
+    def desconectar_cliente(self, cliente_socket: socket.socket):
+        # si el cliente ya no está en el diccionario
+        if cliente_socket not in self.clientes:
+            return
+        
+        # obtenemos el nombre de forma segura
+        nombre = self.clientes.get(cliente_socket, "Un cliente")
+        
+        # le decimos al selector que deje de monitorear ese socket
+        try:
+            self.selector.unregister(cliente_socket)
+        except Exception:
+            # si falla el unregister, no importa, seguimos limpiando igual
+            pass
+
+        # borramos del diccionario y cerramos el socket
+        if cliente_socket in self.clientes:
+            del self.clientes[cliente_socket]
+            # notificamos a todos que se fue, luego de borrarlo para evitar bucles
+            self.broadcast(f"{nombre} abandonó el chat.", None)
+            self.guardar_log(f"{nombre} abandonó el chat.")
+        cliente_socket.close()
 
     def revisar_selectores(self):
         while True:
@@ -78,7 +104,7 @@ class server():
                     # es un mensaje de cliente existente
                     self.recibir_mensaje(socket_evento)
 
-    def recibir_mensaje(self, cliente_socket):
+    def recibir_mensaje(self, cliente_socket: socket.socket):
         try:
             mensaje = cliente_socket.recv(1024).decode()
             if mensaje:
@@ -92,30 +118,7 @@ class server():
                 self.desconectar_cliente(cliente_socket)
         except:
             self.desconectar_cliente(cliente_socket)
-
-    def desconectar_cliente(self, cliente_socket):
-        # si el cliente ya no está en el diccionario
-        if cliente_socket not in self.clientes:
-            return
-        
-        # obtenemos el nombre de forma segura
-        nombre = self.clientes.get(cliente_socket, "Un cliente")
-
-        # notificamos a todos que se fue
-        self.broadcast(f"{nombre} abandonó el chat.", None)
-        self.guardar_log(f"{nombre} abandonó el chat.")
-        
-        # le decimos al selector que deje de monitorear ese socket
-        try:
-            self.selector.unregister(cliente_socket)
-        except Exception:
-            # si falla el unregister, no importa, seguimos limpiando igual
-            pass
-
-        # borramos del diccionario y cerramos el socket
-        del self.clientes[cliente_socket]
-        cliente_socket.close()
-
+    
     def guardar_log(self, mensaje):
         with open("log.txt", "a") as log:
             log.write(f"{mensaje}\n")
